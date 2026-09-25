@@ -9,7 +9,7 @@ export function encodeShareState(state){
  return p.toString();
 }
 export function decodeShareState(hash){
- const p=new URLSearchParams(hash.replace(/^#/,''));if(p.get('v')!=='1')return null;
+ const p=new URLSearchParams(hash.replace(/^#/,''));if(!['1','2'].includes(p.get('v')))return null;
  const lat=finite(p.get('lat'),[-85,85]),lng=finite(p.get('lng'),[-180,180]);if(lat===null||lng===null)return null;
  const state={center:{lat,lng},name:(p.get('name')||'Выбранный участок').slice(0,80)};
  for(const [key,range] of Object.entries(ranges)){const n=finite(p.get(key),range);if(n===null)return null;state[key]=n;}
@@ -18,3 +18,42 @@ export function decodeShareState(hash){
  state.pin=pinLat!==null&&pinLng!==null?{lat:pinLat,lng:pinLng}:null;
  return state;
 }
+
+const printable=f=>f?.geometry&&(
+ (f.properties?.building&&['Polygon','MultiPolygon'].includes(f.geometry.type))||
+ (f.properties?.highway&&['LineString','MultiLineString'].includes(f.geometry.type))
+);
+export function compactModelGeo(geo){
+ return {type:'FeatureCollection',features:geo.features.filter(printable).map(f=>({type:'Feature',geometry:f.geometry,properties:{
+  ...(f.properties.building?{building:f.properties.building}:{}),
+  ...(f.properties.height?{height:f.properties.height}:{}),
+  ...(f.properties['building:levels']?{'building:levels':f.properties['building:levels']}:{}),
+  ...(f.properties.highway?{highway:f.properties.highway}:{})
+ }}))};
+}
+const toBase64Url=bytes=>{
+ let binary='';for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+ return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+};
+const fromBase64Url=value=>{
+ const binary=atob(value.replace(/-/g,'+').replace(/_/g,'/'));const bytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ return bytes;
+};
+export async function encodeSelfContainedShare(state,geo){
+ const data=new TextEncoder().encode(JSON.stringify(compactModelGeo(geo)));
+ const zipped=new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+ const params=new URLSearchParams(encodeShareState(state));params.set('v','2');params.set('model',toBase64Url(zipped));
+ return params.toString();
+}
+export async function decodeEmbeddedGeo(hash){
+ const params=new URLSearchParams(hash.replace(/^#/,''));if(params.get('v')!=='2')return null;
+ const encoded=params.get('model');if(!encoded||encoded.length>2_000_000)throw new Error('Данные модели в ссылке повреждены или слишком велики');
+ const zipped=fromBase64Url(encoded);
+ const json=await new Response(new Blob([zipped]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+ if(json.length>20_000_000)throw new Error('Данные модели слишком велики');
+ const geo=JSON.parse(json);
+ if(geo?.type!=='FeatureCollection'||!Array.isArray(geo.features)||geo.features.length>100_000||geo.features.some(f=>!printable(f)))throw new Error('Некорректные данные модели');
+ return geo;
+}
+

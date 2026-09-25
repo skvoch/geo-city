@@ -1,4 +1,4 @@
-import {encodeShareState,decodeShareState} from './share.js';
+import {decodeShareState,encodeSelfContainedShare,decodeEmbeddedGeo} from './share.js';
 import {loadOverpass} from './overpass.js';
 import {searchPlaces,searchSuggestion} from './search.js';
 import * as THREE from 'three';
@@ -116,16 +116,16 @@ async function rebuild(){
  }catch(error){if(id===buildID){meshData=null;$('model-status').textContent='Не удалось построить точную модель. Попробуйте меньший участок.';$('export-caption').textContent='Ошибка построения';console.error(error);}return false;}
 }
 let timer;document.querySelectorAll('.settings input,.settings select').forEach(el=>el.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(rebuild,120);}));
-async function createModel(useSaved=false){
+async function createModel(useSaved=false,embeddedGeo=null){
  if(loading)return;
  loading=true;const version=++loadVersion;loadController=new AbortController();const controller=loadController;
  const previous={geo,loadedCenter,loadedArea,loadedName,pin,meshData,isDemo};
  const restore=()=>{({geo,loadedCenter,loadedArea,loadedName,pin,meshData,isDemo}=previous);$('download').disabled=!meshData;if(meshData)$('export-caption').textContent=`STL · мм · ${((84+meshData.indices.length/3*50)/1e6).toFixed(2)} МБ`;};
  loadRollback=restore;
  const center=useSaved?{...loadedCenter}:{...selected},area=useSaved?loadedArea:+$('area').value,name=useSaved?loadedName:$('place-name').textContent;
- $('load').disabled=true;setStage('building');buildPhase(0,useSaved?'Возвращаемся к вашему месту.':'Находим здания и улицы на выбранном участке.');
+ $('load').disabled=true;setStage('building');buildPhase(0,embeddedGeo?'Читаем модель из ссылки.':useSaved?'Возвращаемся к вашей модели.':'Находим здания и улицы на выбранном участке.');
  try{
- let next=useSaved?geo:null;
+ let next=embeddedGeo||(useSaved?geo:null);
  if(!next){
  const b=boundsFor(center,area),bbox=`${b.south},${b.west},${b.north},${b.east}`;
  const query=`[out:json][timeout:40];(way["building"](${bbox});relation["building"]["type"="multipolygon"](${bbox});way["highway"]["area"!="yes"](${bbox}););out body;>;out skel qt;`;
@@ -154,7 +154,7 @@ async function createModel(useSaved=false){
 $('load').onclick=()=>createModel();
 $('resume-model').onclick=()=>{if(meshData){$('model-place').textContent=loadedName;setStage('editor');}else createModel(true);};
 function shareState(){return {center:loadedCenter,area:loadedArea,name:loadedName,size:+$('size').value,base:+$('base').value,margin:+$('margin').value,height:+$('height').value,fallback:+$('fallback').value,roadWidth:+$('road-width').value,roadHeight:+$('road-height').value,pinSize:+$('pin-size').value,quality:+$('quality').value,frame:$('frame').checked,roads:$('roads').checked,pinShape:$('pin-shape').value,pin};}
-$('share').onclick=()=>{if(!meshData)return;const url=new URL(location.href);url.hash=encodeShareState(shareState());url.search='';$('share-url').value=url.href;$('share-result').hidden=false;$('copy-share').textContent='Копировать';};
+$('share').onclick=async()=>{if(!meshData||!geo)return;const button=$('share');button.disabled=true;button.textContent='Упаковываем модель…';try{const url=new URL(location.href);url.hash=await encodeSelfContainedShare(shareState(),geo);url.search='';$('share-url').value=url.href;$('share-result').hidden=false;$('copy-share').textContent='Копировать';$('share-note').textContent='Модель уже внутри ссылки. При открытии данные карты не загружаются. Размер ссылки: '+Math.ceil(url.href.length/1024)+' КБ.';}catch(error){$('model-status').textContent='Не удалось подготовить ссылку. Попробуйте уменьшить участок.';console.error(error);}finally{button.disabled=false;button.textContent='↗ Поделиться ссылкой';}};
 $('copy-share').onclick=async()=>{try{await navigator.clipboard.writeText($('share-url').value);$('copy-share').textContent='Скопировано ✓';}catch{$('share-url').focus();$('share-url').select();$('copy-share').textContent='Выделите и скопируйте ссылку';}};
 $('download').onclick=async()=>{const button=$('download');button.disabled=true;button.textContent='Подготавливаем STL…';await new Promise(r=>setTimeout(r,30));try{clearTimeout(timer);if(!await rebuild())throw new Error('geometry');const buffer=binarySTL(meshData.vertices,meshData.indices);const blob=new Blob([buffer],{type:'model/stl'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`kontur-${isDemo?'DEMO':loadedCenter.lat.toFixed(4)+'-'+loadedCenter.lng.toFixed(4)}-${$('size').value}mm.stl`;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);$('model-status').textContent=isDemo?'Скачан учебный пример. Для своего места загрузите данные карты.':'STL скачан. Откройте его в слайсере; единицы — миллиметры.';}catch(e){$('model-status').textContent='Не удалось создать STL. Попробуйте снизить детализацию.';}finally{button.disabled=!meshData;button.textContent='↓ Скачать STL';}};
 geo=null;
@@ -166,5 +166,8 @@ if(shared){
  selected={...shared.center};$('area').value=shared.area;$('place-name').textContent=shared.name;
  for(const key of ['size','base','margin','height','fallback','quality'])$(key).value=shared[key];
  $('road-width').value=shared.roadWidth;$('road-height').value=shared.roadHeight;$('pin-size').value=shared.pinSize;$('frame').checked=shared.frame;$('roads').checked=shared.roads;$('pin-shape').value=shared.pinShape;
- sharedPin=shared.pin;selection();map.setView(selected,16);createModel();
+ sharedPin=shared.pin;selection();map.setView(selected,16);
+ (async()=>{try{const embedded=await decodeEmbeddedGeo(location.hash);createModel(false,embedded);}catch(error){$('results').hidden=false;$('results').textContent='Не удалось прочитать модель из ссылки. Попросите отправить ссылку ещё раз.';console.error(error);}})();
 }
+
+

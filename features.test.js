@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import Module from 'manifold-3d';
 import {boundsFor,modelPointFromGeo,geoFromModelPoint} from './src/geometry.js';
 import {buildVectorModel} from './src/vector-model.js';
-import {encodeShareState,decodeShareState} from './src/share.js';
+import {encodeShareState,decodeShareState,encodeSelfContainedShare,decodeEmbeddedGeo} from './src/share.js';
 const kernel=await Module();kernel.setup();
 const center={lat:57.174348,lng:65.541747},bounds=boundsFor(center,800);
 test('editable margin keeps the printable base size and exact inset buildings',()=>{
@@ -22,4 +22,18 @@ test('shared links restore coordinates, pin, margin and settings',()=>{
  const state={center,area:800,name:'Тюмень · Щербакова, 88',size:200,base:3,margin:12,height:1.5,fallback:15,roadWidth:1.2,roadHeight:.6,pinSize:9,quality:64,frame:true,roads:true,pinShape:'heart',pin:center};
  const decoded=decodeShareState('#'+encodeShareState(state));
  assert.equal(decoded.margin,12);assert.equal(decoded.name,state.name);assert.deepEqual(decoded.center,center);assert.deepEqual(decoded.pin,center);assert.equal(decodeShareState('#v=1&lat=999'),null);
+});
+
+test('self-contained link restores model geometry without fetching map data',async()=>{
+ const state={center,area:800,name:'Тюмень',size:200,base:3,margin:4,height:1.5,fallback:15,roadWidth:1.2,roadHeight:.6,pinSize:9,quality:64,frame:true,roads:true,pinShape:'heart',pin:center};
+ const building={type:'Feature',properties:{building:'yes',height:'12',name:'ignored'},geometry:{type:'Polygon',coordinates:[[[65.5,57.1],[65.6,57.1],[65.6,57.2],[65.5,57.1]]]}};
+ const road={type:'Feature',properties:{highway:'residential'},geometry:{type:'LineString',coordinates:[[65.5,57.1],[65.6,57.2]]}};
+ const hash=await encodeSelfContainedShare(state,{type:'FeatureCollection',features:[building,road]});
+ const restored=await decodeEmbeddedGeo('#'+hash);
+ assert.equal(decodeShareState('#'+hash).name,'Тюмень');
+ assert.equal(restored.features.length,2);
+ assert.deepEqual(restored.features[0].geometry,building.geometry);
+ assert.equal(restored.features[0].properties.name,undefined);
+ assert.equal(restored.features[1].properties.highway,'residential');
+ assert.equal(await decodeEmbeddedGeo('#'+encodeShareState(state)),null);
 });
