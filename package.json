@@ -1,0 +1,1 @@
+{"name":"kontur-studio","version":"1.0.0","type":"module","scripts":{"dev":"vite --host 0.0.0.0","build":"vite build","test":"node --test"},"dependencies":{"leaflet":"^1.9.4","manifold-3d":"^3.5.4","osmtogeojson":"^3.0.0-beta.5","three":"^0.180.0"},"devDependencies":{"vite":"^7.1.7"},"overrides":{"@xmldom/xmldom":"0.9.12"}}
