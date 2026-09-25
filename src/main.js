@@ -102,7 +102,7 @@ async function rebuild(){
  const id=++buildID,size=+$('size').value,base=+$('base').value,mult=+$('height').value,fallback=+$('fallback').value;
  const number=(name,min,max,defaultValue)=>Math.max(min,Math.min(max,+$(name).value||defaultValue));
  $('download').disabled=true;$('export-caption').textContent='Строим точные контуры…';
- const margin=+$('margin').value;$('margin-out').textContent=`${margin} мм`;const options={size,base,margin,height:mult,fallback,center:loadedCenter,area:loadedArea,roads:$('roads').checked,roadWidth:number('road-width',.6,4,1.2),roadHeight:number('road-height',.2,3,.6),frame:$('frame').checked,pin,pinSize:number('pin-size',4,20,9),pinShape:$('pin-shape').value,segments:+$('quality').value};
+ const margin=+$('margin').value;$('margin-out').textContent=`${margin} мм`;const options={size,base,margin,height:mult,fallback,center:loadedCenter,area:loadedArea,roads:$('roads').checked,roadWidth:number('road-width',.6,4,1.2),roadHeight:number('road-height',.05,3,.25),frame:$('frame').checked,pin,pinSize:number('pin-size',4,20,9),pinShape:$('pin-shape').value,segments:+$('quality').value};
  $('size-out').textContent=`${size} мм`;$('base-out').textContent=`${base} мм`;$('height-out').textContent=`${mult.toLocaleString('ru')}×`;$('fallback-out').textContent=`${fallback} м`;
  try {
  const result=await new Promise((resolve,reject)=>{waiting.set(id,{resolve,reject});modelWorker.postMessage({id,geo,options});});

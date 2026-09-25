@@ -1,4 +1,4 @@
-const ranges={area:[300,1800],size:[100,250],base:[2,8],margin:[0,20],height:[.5,4],fallback:[3,50],roadWidth:[.6,4],roadHeight:[.2,3],pinSize:[4,20],quality:[32,128]};
+const ranges={area:[300,1800],size:[100,250],base:[2,8],margin:[0,20],height:[.5,4],fallback:[3,50],roadWidth:[.6,4],roadHeight:[.05,3],pinSize:[4,20],quality:[32,128]};
 const finite=(value,[min,max])=>{const n=Number(value);return Number.isFinite(n)&&n>=min&&n<=max?n:null;};
 export function encodeShareState(state){
  const p=new URLSearchParams({v:'1',lat:state.center.lat.toFixed(6),lng:state.center.lng.toFixed(6),area:String(state.area),name:String(state.name||'').slice(0,80)});
